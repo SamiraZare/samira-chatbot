@@ -50,7 +50,7 @@ app = FastAPI(title="Samira Zare Portfolio Chatbot")
 # replace "*" with your real domain, e.g. allow_origins=["https://samirazare.com"].
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://samirazare.com", "https://www.samirazare.com"],
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
