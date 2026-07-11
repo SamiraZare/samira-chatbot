@@ -1,0 +1,144 @@
+<!--
+  Samira Zare portfolio chatbot widget.
+
+  HOW TO ADD TO YOUR WORDPRESS SITE:
+  1. Deploy the backend (see README) and copy its URL.
+  2. Change BACKEND_URL below to your deployed URL.
+  3. In WordPress: add a "Custom HTML" block (or use a header/footer plugin)
+     and paste this entire file's contents.
+  That's it — the floating chat button appears on every page it's added to.
+-->
+<div id="sz-chat-root"></div>
+
+<script>
+(function () {
+  // ─────────────────────────────────────────────────────────────────────────
+  // CONFIG — change this to your deployed backend URL after deploying.
+  const BACKEND_URL = "https://your-render-url-here.onrender.com";
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const GREEN = "#4a8a5c";       // matches the site's green accent
+  const GREEN_DARK = "#3a6e49";
+  const history = [];
+
+  // ── Styles (scoped with sz- prefix to avoid clashing with the site) ───────
+  const style = document.createElement("style");
+  style.textContent = `
+    #sz-chat-root * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .sz-fab {
+      position: fixed; bottom: 24px; right: 24px; z-index: 99999;
+      width: 60px; height: 60px; border-radius: 50%; border: none;
+      background: ${GREEN}; color: #fff; font-size: 26px; cursor: pointer;
+      box-shadow: 0 6px 20px rgba(0,0,0,.25); transition: transform .15s ease, background .2s;
+    }
+    .sz-fab:hover { background: ${GREEN_DARK}; transform: scale(1.06); }
+    .sz-panel {
+      position: fixed; bottom: 96px; right: 24px; z-index: 99999;
+      width: 360px; max-width: calc(100vw - 32px); height: 480px; max-height: calc(100vh - 140px);
+      background: #fff; border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,.28);
+      display: none; flex-direction: column; overflow: hidden;
+    }
+    .sz-panel.sz-open { display: flex; }
+    .sz-header {
+      background: ${GREEN}; color: #fff; padding: 16px 18px;
+    }
+    .sz-header h3 { margin: 0; font-size: 16px; font-weight: 600; }
+    .sz-header p { margin: 2px 0 0; font-size: 12px; opacity: .9; }
+    .sz-msgs { flex: 1; overflow-y: auto; padding: 16px; background: #f7f8f7; }
+    .sz-msg { margin-bottom: 12px; display: flex; }
+    .sz-msg.sz-user { justify-content: flex-end; }
+    .sz-bubble {
+      max-width: 80%; padding: 10px 13px; border-radius: 14px; font-size: 14px; line-height: 1.45;
+    }
+    .sz-bot .sz-bubble { background: #fff; color: #222; border: 1px solid #e3e6e3; border-bottom-left-radius: 4px; }
+    .sz-user .sz-bubble { background: ${GREEN}; color: #fff; border-bottom-right-radius: 4px; }
+    .sz-input { display: flex; border-top: 1px solid #e3e6e3; padding: 10px; gap: 8px; background: #fff; }
+    .sz-input input {
+      flex: 1; border: 1px solid #d6dad6; border-radius: 20px; padding: 9px 14px; font-size: 14px; outline: none;
+    }
+    .sz-input input:focus { border-color: ${GREEN}; }
+    .sz-input button {
+      border: none; background: ${GREEN}; color: #fff; border-radius: 20px; padding: 0 16px; cursor: pointer; font-size: 14px;
+    }
+    .sz-input button:disabled { opacity: .5; cursor: default; }
+    .sz-typing { font-size: 13px; color: #888; font-style: italic; padding: 0 16px 10px; }
+    @media (prefers-reduced-motion: reduce) { .sz-fab { transition: none; } }
+  `;
+  document.head.appendChild(style);
+
+  // ── Markup ────────────────────────────────────────────────────────────────
+  const root = document.getElementById("sz-chat-root");
+  root.innerHTML = `
+    <button class="sz-fab" id="sz-fab" aria-label="Chat with Samira's assistant">💬</button>
+    <div class="sz-panel" id="sz-panel" role="dialog" aria-label="Chat assistant">
+      <div class="sz-header">
+        <h3>Ask about Samira</h3>
+        <p>Her research, projects, and background</p>
+      </div>
+      <div class="sz-msgs" id="sz-msgs"></div>
+      <div class="sz-typing" id="sz-typing" style="display:none">Typing…</div>
+      <div class="sz-input">
+        <input id="sz-text" type="text" placeholder="e.g. What was Samira's PhD about?" autocomplete="off"/>
+        <button id="sz-send">Send</button>
+      </div>
+    </div>
+  `;
+
+  const fab = document.getElementById("sz-fab");
+  const panel = document.getElementById("sz-panel");
+  const msgs = document.getElementById("sz-msgs");
+  const text = document.getElementById("sz-text");
+  const send = document.getElementById("sz-send");
+  const typing = document.getElementById("sz-typing");
+
+  function addMsg(content, who) {
+    const row = document.createElement("div");
+    row.className = "sz-msg sz-" + who;
+    row.innerHTML = `<div class="sz-bubble"></div>`;
+    row.querySelector(".sz-bubble").textContent = content;
+    msgs.appendChild(row);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  // Greeting on first open
+  let greeted = false;
+  fab.addEventListener("click", () => {
+    panel.classList.toggle("sz-open");
+    if (!greeted) {
+      addMsg("Hi! I can answer questions about Samira's background, research, and projects. What would you like to know?", "bot");
+      greeted = true;
+    }
+    text.focus();
+  });
+
+  async function sendMessage() {
+    const message = text.value.trim();
+    if (!message) return;
+    addMsg(message, "user");
+    history.push({ role: "user", content: message });
+    text.value = "";
+    send.disabled = true;
+    typing.style.display = "block";
+
+    try {
+      const res = await fetch(BACKEND_URL + "/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, history: history.slice(0, -1) }),
+      });
+      const data = await res.json();
+      addMsg(data.reply, "bot");
+      history.push({ role: "assistant", content: data.reply });
+    } catch (e) {
+      addMsg("Sorry, I couldn't reach the assistant. Please email samiraaa.zare@gmail.com.", "bot");
+    } finally {
+      typing.style.display = "none";
+      send.disabled = false;
+      text.focus();
+    }
+  }
+
+  send.addEventListener("click", sendMessage);
+  text.addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
+})();
+</script>
